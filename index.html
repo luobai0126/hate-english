@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>英语数字听力训练</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="trainer" aria-labelledby="app-title">
+        <div class="topbar">
+          <div>
+            <p class="eyebrow">Number Listening</p>
+            <h1 id="app-title">英语数字听力训练</h1>
+          </div>
+          <div class="score" aria-live="polite">
+            <span id="score-correct">0</span>/<span id="score-total">0</span>
+          </div>
+        </div>
+
+        <div class="practice-area">
+          <div class="number-display" aria-live="polite">
+            <span id="digit-preview">?</span>
+          </div>
+
+          <div class="controls">
+            <button class="icon-button primary" id="play-button" type="button" aria-label="播放英文数字">
+              <span aria-hidden="true">▶</span>
+            </button>
+            <button class="icon-button" id="next-button" type="button" aria-label="下一题">
+              <span aria-hidden="true">↻</span>
+            </button>
+          </div>
+
+          <form id="answer-form" class="answer-form" autocomplete="off">
+            <label for="answer-input">输入或说出中文数字</label>
+            <div class="answer-row">
+              <input id="answer-input" name="answer" type="text" inputmode="text" placeholder="例如：三百二十六">
+              <button class="voice-button" id="voice-button" type="button" aria-label="语音回答">
+                <span aria-hidden="true">说</span>
+              </button>
+              <button type="submit">判断</button>
+            </div>
+          </form>
+
+          <p id="feedback" class="feedback neutral" aria-live="polite">点击播放，听到英文数字后输入或说出中文答案。</p>
+        </div>
+
+        <aside class="settings" aria-label="训练设置">
+          <div class="setting">
+            <label for="range-select">数字范围</label>
+            <select id="range-select">
+              <option value="20">0-20</option>
+              <option value="100">0-100</option>
+              <option value="1000" selected>0-1000</option>
+              <option value="10000">0-10000</option>
+            </select>
+          </div>
+
+          <div class="setting">
+            <label for="speed-range">语速</label>
+            <input id="speed-range" type="range" min="0.65" max="1.15" value="0.86" step="0.01">
+          </div>
+
+          <div class="setting compact">
+            <label>
+              <input id="show-answer-toggle" type="checkbox">
+              显示答案提示
+            </label>
+          </div>
+        </aside>
+      </section>
+    </main>
+
+    <script src="./app.js?v=5"></script>
+  </body>
+</html>
