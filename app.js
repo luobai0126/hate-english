@@ -85,12 +85,12 @@ function normalizeCurrentAnswer(raw) {
     return Number(cleaned.replace(/[，,\s_]/g, ""));
   }
 
-  if (modeSelect.value === "zh-to-en") return parseEnglishInteger(cleaned);
+  if (expectsEnglishAnswer()) return parseEnglishInteger(cleaned);
   return normalizeAnswer(cleaned);
 }
 
 function normalizeSpeechAnswer(raw) {
-  const answer = modeSelect.value === "zh-to-en"
+  const answer = expectsEnglishAnswer()
     ? parseEnglishInteger(raw)
     : normalizeAnswer(raw);
 
@@ -258,8 +258,17 @@ function chooseNumber(options = {}) {
   setFeedback("neutral", getReadyMessage());
   answerInput.focus();
   if (options.autoPlay) {
-    window.setTimeout(() => speakCurrentNumber({ listenAfter: true }), 120);
+    window.setTimeout(startCurrentPrompt, 120);
   }
+}
+
+function startCurrentPrompt() {
+  if (modeSelect.value === "read-en") {
+    startVoiceAnswer({ clearInput: true });
+    return;
+  }
+
+  speakCurrentNumber({ listenAfter: true });
 }
 
 function speakCurrentNumber(options = {}) {
@@ -343,7 +352,7 @@ function setupSpeechRecognition() {
     state.isListening = true;
     voiceButton.classList.add("listening");
     voiceButton.setAttribute("aria-label", "停止语音回答");
-    setFeedback("neutral", modeSelect.value === "zh-to-en" ? "正在听，请直接说英文数字。" : "正在听，请直接说中文数字。");
+    setFeedback("neutral", expectsEnglishAnswer() ? "正在听，请直接说英文数字。" : "正在听，请直接说中文数字。");
   });
 
   state.recognition.addEventListener("end", () => {
@@ -418,7 +427,7 @@ function clearListenTimer() {
 }
 
 function getRecognitionLang() {
-  return modeSelect.value === "zh-to-en" ? "en-US" : "zh-CN";
+  return expectsEnglishAnswer() ? "en-US" : "zh-CN";
 }
 
 function getPromptText() {
@@ -426,23 +435,29 @@ function getPromptText() {
 }
 
 function getReadyMessage() {
+  if (modeSelect.value === "read-en") return "看屏幕上的数字，听到滴声后说出英文。";
+
   return modeSelect.value === "zh-to-en"
     ? "点击播放，听到中文数字后输入或说出英文答案。"
     : "点击播放，听到英文数字后输入或说出中文答案。";
 }
 
 function getUnrecognizedMessage() {
-  return modeSelect.value === "zh-to-en"
+  return expectsEnglishAnswer()
     ? "还没识别出英文数字，可以说英文数字或输入阿拉伯数字。"
     : "还没识别出中文数字，可以说中文数字或输入阿拉伯数字。";
 }
 
 function getAnswerSummary() {
-  if (modeSelect.value === "zh-to-en") {
+  if (expectsEnglishAnswer()) {
     return `${state.currentNumber}，${toEnglishNumber(state.currentNumber)}`;
   }
 
   return `${state.currentNumber}，${toChineseNumber(state.currentNumber)}`;
+}
+
+function expectsEnglishAnswer() {
+  return modeSelect.value === "zh-to-en" || modeSelect.value === "read-en";
 }
 
 function isLocalHost() {
@@ -519,10 +534,10 @@ function clearAutoAdvance() {
 }
 
 function render() {
-  digitPreview.textContent = showAnswerToggle.checked ? state.currentNumber : "?";
-  const isReverse = modeSelect.value === "zh-to-en";
-  answerLabel.textContent = isReverse ? "输入或说出英文数字" : "输入或说出中文数字";
-  answerInput.placeholder = isReverse ? "例如：three hundred twenty six" : "例如：三百二十六";
+  digitPreview.textContent = modeSelect.value === "read-en" || showAnswerToggle.checked ? state.currentNumber : "?";
+  const needsEnglish = expectsEnglishAnswer();
+  answerLabel.textContent = needsEnglish ? "输入或说出英文数字" : "输入或说出中文数字";
+  answerInput.placeholder = needsEnglish ? "例如：three hundred twenty six" : "例如：三百二十六";
   renderScore();
 }
 
@@ -536,11 +551,11 @@ function setFeedback(type, message) {
   feedback.textContent = message;
 }
 
-playButton.addEventListener("click", () => speakCurrentNumber({ listenAfter: true }));
+playButton.addEventListener("click", startCurrentPrompt);
 nextButton.addEventListener("click", () => chooseNumber({ autoPlay: true }));
 answerForm.addEventListener("submit", checkAnswer);
 voiceButton.addEventListener("click", toggleVoiceAnswer);
-modeSelect.addEventListener("change", () => chooseNumber({ autoPlay: false }));
+modeSelect.addEventListener("change", () => chooseNumber({ autoPlay: modeSelect.value === "read-en" }));
 rangeSelect.addEventListener("change", () => chooseNumber({ autoPlay: false }));
 showAnswerToggle.addEventListener("change", render);
 
