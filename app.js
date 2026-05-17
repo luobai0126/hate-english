@@ -322,7 +322,7 @@ function checkCurrentAnswer() {
     answerInput.value = "";
     setFeedback("wrong", "不对，再试一次。");
     playWrongSound();
-    window.setTimeout(() => startVoiceAnswer({ clearInput: true }), 520);
+    window.setTimeout(() => startVoiceAnswer({ clearInput: true }), 780);
   }
 
   renderScore();
@@ -351,7 +351,7 @@ function createRecognition() {
   const recognition = new Recognition();
   recognition.lang = getRecognitionLang();
   recognition.continuous = false;
-  recognition.interimResults = true;
+  recognition.interimResults = false;
   recognition.maxAlternatives = 5;
 
   recognition.addEventListener("start", () => {
@@ -372,12 +372,10 @@ function createRecognition() {
     const transcript = getBestTranscript(event);
     const numericAnswer = normalizeSpeechAnswer(transcript);
 
-    if (!event.results[event.results.length - 1].isFinal && numericAnswer === null) return;
-
     if (numericAnswer === null) {
       answerInput.value = "";
       setFeedback("warn", `没有识别到数字：${transcript || "未听清"}。请听到滴声后再说一次。`);
-      window.setTimeout(() => startVoiceAnswer({ clearInput: true }), 520);
+      window.setTimeout(() => startVoiceAnswer({ clearInput: true }), 780);
       return;
     }
 
@@ -545,7 +543,7 @@ function playWrongSound() {
 
 function scheduleAutoAdvance() {
   clearAutoAdvance();
-  state.autoAdvanceTimer = window.setTimeout(() => chooseNumber({ autoPlay: true }), 650);
+  state.autoAdvanceTimer = window.setTimeout(() => chooseNumber({ autoPlay: true }), 900);
 }
 
 function clearAutoAdvance() {
