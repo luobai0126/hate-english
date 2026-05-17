@@ -322,7 +322,7 @@ function checkCurrentAnswer() {
     answerInput.value = "";
     setFeedback("wrong", "不对，再试一次。");
     playWrongSound();
-    window.setTimeout(() => startVoiceAnswer({ clearInput: true }), 780);
+    window.setTimeout(() => startVoiceAnswer({ clearInput: true }), 650);
   }
 
   renderScore();
@@ -375,7 +375,7 @@ function createRecognition() {
     if (numericAnswer === null) {
       answerInput.value = "";
       setFeedback("warn", `没有识别到数字：${transcript || "未听清"}。请听到滴声后再说一次。`);
-      window.setTimeout(() => startVoiceAnswer({ clearInput: true }), 780);
+      window.setTimeout(() => startVoiceAnswer({ clearInput: true }), 650);
       return;
     }
 
@@ -543,7 +543,7 @@ function playWrongSound() {
 
 function scheduleAutoAdvance() {
   clearAutoAdvance();
-  state.autoAdvanceTimer = window.setTimeout(() => chooseNumber({ autoPlay: true }), 900);
+  state.autoAdvanceTimer = window.setTimeout(() => chooseNumber({ autoPlay: true }), 780);
 }
 
 function clearAutoAdvance() {
