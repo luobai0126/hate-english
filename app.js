@@ -7,6 +7,8 @@ const state = {
   recognition: null,
   isListening: false,
   voiceUnavailableMessage: "",
+  audioContext: null,
+  listenTimer: null,
 };
 
 const digitPreview = document.querySelector("#digit-preview");
@@ -85,6 +87,14 @@ function normalizeCurrentAnswer(raw) {
 
   if (modeSelect.value === "zh-to-en") return parseEnglishInteger(cleaned);
   return normalizeAnswer(cleaned);
+}
+
+function normalizeSpeechAnswer(raw) {
+  const answer = modeSelect.value === "zh-to-en"
+    ? parseEnglishInteger(raw)
+    : normalizeAnswer(raw);
+
+  return Number.isFinite(answer) ? answer : null;
 }
 
 function parseChineseInteger(text) {
@@ -248,7 +258,7 @@ function chooseNumber(options = {}) {
   setFeedback("neutral", getReadyMessage());
   answerInput.focus();
   if (options.autoPlay) {
-    window.setTimeout(() => speakCurrentNumber({ listenAfter: true }), 250);
+    window.setTimeout(() => speakCurrentNumber({ listenAfter: true }), 120);
   }
 }
 
@@ -296,9 +306,13 @@ function checkCurrentAnswer() {
   if (answer === state.currentNumber) {
     if (isFirstAttempt) state.correct += 1;
     setFeedback("correct", `答对了：${getAnswerSummary()}。`);
+    playCorrectSound();
     scheduleAutoAdvance();
   } else {
-    setFeedback("wrong", `还差一点。正确答案是 ${getAnswerSummary()}。`);
+    answerInput.value = "";
+    setFeedback("wrong", "不对，再试一次。");
+    playWrongSound();
+    window.setTimeout(() => startVoiceAnswer({ clearInput: true }), 520);
   }
 
   renderScore();
@@ -340,8 +354,17 @@ function setupSpeechRecognition() {
 
   state.recognition.addEventListener("result", (event) => {
     const transcript = event.results[0][0].transcript;
-    answerInput.value = transcript;
-    setFeedback("neutral", `识别为：${transcript}`);
+    const numericAnswer = normalizeSpeechAnswer(transcript);
+
+    if (numericAnswer === null) {
+      answerInput.value = "";
+      setFeedback("warn", "没有识别到数字，请听到滴声后再说一次。");
+      window.setTimeout(() => startVoiceAnswer({ clearInput: true }), 520);
+      return;
+    }
+
+    answerInput.value = String(numericAnswer);
+    setFeedback("neutral", `识别为数字：${numericAnswer}`);
     checkCurrentAnswer();
   });
 
@@ -367,19 +390,31 @@ function startVoiceAnswer(options = {}) {
   }
 
   clearAutoAdvance();
+  clearListenTimer();
   if (options.clearInput) answerInput.value = "";
   window.speechSynthesis?.cancel();
   state.recognition.lang = getRecognitionLang();
-  try {
-    state.recognition.start();
-  } catch {
-    setFeedback("warn", "语音识别还没准备好，请稍等一下再点。");
-  }
+  setFeedback("neutral", "听到滴声后回答。");
+  playReadyBeep();
+  state.listenTimer = window.setTimeout(() => {
+    try {
+      state.recognition.start();
+    } catch {
+      setFeedback("warn", "语音识别还没准备好，请稍等一下再点。");
+    }
+  }, 170);
 }
 
 function stopListening() {
+  clearListenTimer();
   if (!state.recognition || !state.isListening) return;
   state.recognition.stop();
+}
+
+function clearListenTimer() {
+  if (!state.listenTimer) return;
+  window.clearTimeout(state.listenTimer);
+  state.listenTimer = null;
 }
 
 function getRecognitionLang() {
@@ -398,8 +433,8 @@ function getReadyMessage() {
 
 function getUnrecognizedMessage() {
   return modeSelect.value === "zh-to-en"
-    ? "还没识别出这个英文数字，可以说英文或输入阿拉伯数字。"
-    : "还没识别出这个中文数字，可以说中文或输入阿拉伯数字。";
+    ? "还没识别出英文数字，可以说英文数字或输入阿拉伯数字。"
+    : "还没识别出中文数字，可以说中文数字或输入阿拉伯数字。";
 }
 
 function getAnswerSummary() {
@@ -430,9 +465,51 @@ function getSpeechErrorMessage(error) {
   return "这次没有听清，可以再点“说”重试。";
 }
 
+function getAudioContext() {
+  const AudioContext = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContext) return null;
+
+  if (!state.audioContext) state.audioContext = new AudioContext();
+  if (state.audioContext.state === "suspended") state.audioContext.resume();
+  return state.audioContext;
+}
+
+function playTone(frequency, duration, options = {}) {
+  const audioContext = getAudioContext();
+  if (!audioContext) return;
+
+  const oscillator = audioContext.createOscillator();
+  const gain = audioContext.createGain();
+  const now = audioContext.currentTime;
+  const volume = options.volume ?? 0.08;
+
+  oscillator.type = options.type || "sine";
+  oscillator.frequency.setValueAtTime(frequency, now);
+  gain.gain.setValueAtTime(0.0001, now);
+  gain.gain.exponentialRampToValueAtTime(volume, now + 0.015);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+  oscillator.connect(gain);
+  gain.connect(audioContext.destination);
+  oscillator.start(now);
+  oscillator.stop(now + duration + 0.02);
+}
+
+function playReadyBeep() {
+  playTone(880, 0.1, { volume: 0.07 });
+}
+
+function playCorrectSound() {
+  playTone(660, 0.11, { volume: 0.08 });
+  window.setTimeout(() => playTone(920, 0.14, { volume: 0.08 }), 105);
+}
+
+function playWrongSound() {
+  playTone(190, 0.18, { type: "square", volume: 0.045 });
+}
+
 function scheduleAutoAdvance() {
   clearAutoAdvance();
-  state.autoAdvanceTimer = window.setTimeout(() => chooseNumber({ autoPlay: true }), 900);
+  state.autoAdvanceTimer = window.setTimeout(() => chooseNumber({ autoPlay: true }), 650);
 }
 
 function clearAutoAdvance() {
@@ -469,6 +546,7 @@ showAnswerToggle.addEventListener("change", render);
 
 window.numberTrainer = {
   normalizeAnswer,
+  normalizeSpeechAnswer,
   parseEnglishInteger,
   toChineseNumber,
   toEnglishNumber,
