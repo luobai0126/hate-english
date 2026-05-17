@@ -14,8 +14,10 @@ const playButton = document.querySelector("#play-button");
 const nextButton = document.querySelector("#next-button");
 const answerForm = document.querySelector("#answer-form");
 const answerInput = document.querySelector("#answer-input");
+const answerLabel = document.querySelector("#answer-label");
 const voiceButton = document.querySelector("#voice-button");
 const feedback = document.querySelector("#feedback");
+const modeSelect = document.querySelector("#mode-select");
 const rangeSelect = document.querySelector("#range-select");
 const speedRange = document.querySelector("#speed-range");
 const showAnswerToggle = document.querySelector("#show-answer-toggle");
@@ -42,6 +44,22 @@ const unitMap = new Map([
   ["万", 10000],
 ]);
 
+const englishSmallNumbers = new Map([
+  ["zero", 0], ["oh", 0], ["o", 0],
+  ["one", 1], ["a", 1], ["an", 1],
+  ["two", 2], ["three", 3], ["four", 4], ["five", 5],
+  ["six", 6], ["seven", 7], ["eight", 8], ["nine", 9],
+  ["ten", 10], ["eleven", 11], ["twelve", 12], ["thirteen", 13],
+  ["fourteen", 14], ["fifteen", 15], ["sixteen", 16],
+  ["seventeen", 17], ["eighteen", 18], ["nineteen", 19],
+]);
+
+const englishTens = new Map([
+  ["twenty", 20], ["thirty", 30], ["forty", 40], ["fourty", 40],
+  ["fifty", 50], ["sixty", 60], ["seventy", 70], ["eighty", 80],
+  ["ninety", 90],
+]);
+
 function normalizeAnswer(raw) {
   const cleaned = raw
     .trim()
@@ -56,6 +74,17 @@ function normalizeAnswer(raw) {
   }
 
   return parseChineseInteger(cleaned);
+}
+
+function normalizeCurrentAnswer(raw) {
+  const cleaned = raw.trim();
+  if (!cleaned) return null;
+  if (/^-?\d+$/.test(cleaned.replace(/[，,\s_]/g, ""))) {
+    return Number(cleaned.replace(/[，,\s_]/g, ""));
+  }
+
+  if (modeSelect.value === "zh-to-en") return parseEnglishInteger(cleaned);
+  return normalizeAnswer(cleaned);
 }
 
 function parseChineseInteger(text) {
@@ -114,28 +143,133 @@ function toChineseNumber(number) {
   return parts.join("").replace(/^一十/, "十").replace(/零+$/g, "");
 }
 
-function chooseNumber() {
+function toEnglishNumber(number) {
+  if (number === 0) return "zero";
+  if (number === 10000) return "ten thousand";
+
+  const belowTwenty = [
+    "", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
+    "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen",
+    "seventeen", "eighteen", "nineteen",
+  ];
+  const tens = ["", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"];
+
+  function belowThousand(value) {
+    const parts = [];
+    if (value >= 100) {
+      parts.push(`${belowTwenty[Math.floor(value / 100)]} hundred`);
+      value %= 100;
+    }
+    if (value >= 20) {
+      const ten = tens[Math.floor(value / 10)];
+      const rest = value % 10;
+      parts.push(rest ? `${ten} ${belowTwenty[rest]}` : ten);
+    } else if (value > 0) {
+      parts.push(belowTwenty[value]);
+    }
+    return parts.join(" ");
+  }
+
+  if (number >= 1000) {
+    const thousands = Math.floor(number / 1000);
+    const rest = number % 1000;
+    return rest ? `${belowThousand(thousands)} thousand ${belowThousand(rest)}` : `${belowThousand(thousands)} thousand`;
+  }
+
+  return belowThousand(number);
+}
+
+function parseEnglishInteger(raw) {
+  const normalized = raw
+    .toLowerCase()
+    .replace(/-/g, " ")
+    .replace(/[,.!?]/g, " ")
+    .replace(/\band\b/g, " ")
+    .replace(/\bto\b/g, "two")
+    .replace(/\btoo\b/g, "two")
+    .replace(/\bfor\b/g, "four")
+    .trim();
+
+  if (!normalized) return null;
+  if (/^\d+$/.test(normalized.replace(/\s/g, ""))) return Number(normalized.replace(/\s/g, ""));
+
+  const tokens = normalized.split(/\s+/).filter(Boolean);
+  if (!tokens.length) return null;
+
+  if (tokens.every((token) => englishSmallNumbers.has(token) && englishSmallNumbers.get(token) < 10)) {
+    return Number(tokens.map((token) => englishSmallNumbers.get(token)).join(""));
+  }
+
+  let total = 0;
+  let current = 0;
+  let sawNumber = false;
+
+  for (const token of tokens) {
+    if (englishSmallNumbers.has(token)) {
+      current += englishSmallNumbers.get(token);
+      sawNumber = true;
+      continue;
+    }
+
+    if (englishTens.has(token)) {
+      current += englishTens.get(token);
+      sawNumber = true;
+      continue;
+    }
+
+    if (token === "hundred") {
+      current = (current || 1) * 100;
+      sawNumber = true;
+      continue;
+    }
+
+    if (token === "thousand") {
+      total += (current || 1) * 1000;
+      current = 0;
+      sawNumber = true;
+      continue;
+    }
+
+    return null;
+  }
+
+  if (!sawNumber) return null;
+  return total + current;
+}
+
+function chooseNumber(options = {}) {
   clearAutoAdvance();
+  stopListening();
   const max = Number(rangeSelect.value);
   state.currentNumber = Math.floor(Math.random() * (max + 1));
   state.answered = false;
   answerInput.value = "";
   render();
-  setFeedback("neutral", "点击播放，听到英文数字后输入或说出中文答案。");
+  setFeedback("neutral", getReadyMessage());
   answerInput.focus();
+  if (options.autoPlay) {
+    window.setTimeout(() => speakCurrentNumber({ listenAfter: true }), 250);
+  }
 }
 
-function speakCurrentNumber() {
+function speakCurrentNumber(options = {}) {
   if (!("speechSynthesis" in window)) {
     setFeedback("warn", "当前浏览器不支持语音播放，可以换用 Chrome 或 Safari 试试。");
     return;
   }
 
+  stopListening();
   window.speechSynthesis.cancel();
-  const utterance = new SpeechSynthesisUtterance(String(state.currentNumber));
-  utterance.lang = "en-US";
+  const utterance = new SpeechSynthesisUtterance(getPromptText());
+  utterance.lang = modeSelect.value === "zh-to-en" ? "zh-CN" : "en-US";
   utterance.rate = Number(speedRange.value);
   utterance.pitch = 1;
+  utterance.addEventListener("start", () => {
+    setFeedback("neutral", "正在播放题目。");
+  });
+  utterance.addEventListener("end", () => {
+    if (options.listenAfter !== false) startVoiceAnswer({ clearInput: true });
+  });
   window.speechSynthesis.speak(utterance);
 }
 
@@ -145,11 +279,11 @@ function checkAnswer(event) {
 }
 
 function checkCurrentAnswer() {
-  const answer = normalizeAnswer(answerInput.value);
+  const answer = normalizeCurrentAnswer(answerInput.value);
   const isFirstAttempt = !state.answered;
 
   if (answer === null || Number.isNaN(answer)) {
-    setFeedback("warn", "还没识别出这个答案，可以输入中文数字或阿拉伯数字。");
+    setFeedback("warn", getUnrecognizedMessage());
     answerInput.focus();
     return;
   }
@@ -161,10 +295,10 @@ function checkCurrentAnswer() {
 
   if (answer === state.currentNumber) {
     if (isFirstAttempt) state.correct += 1;
-    setFeedback("correct", `答对了：${state.currentNumber}，${toChineseNumber(state.currentNumber)}。`);
+    setFeedback("correct", `答对了：${getAnswerSummary()}。`);
     scheduleAutoAdvance();
   } else {
-    setFeedback("wrong", `还差一点。正确答案是 ${state.currentNumber}，${toChineseNumber(state.currentNumber)}。`);
+    setFeedback("wrong", `还差一点。正确答案是 ${getAnswerSummary()}。`);
   }
 
   renderScore();
@@ -186,7 +320,7 @@ function setupSpeechRecognition() {
   }
 
   state.recognition = new Recognition();
-  state.recognition.lang = "zh-CN";
+  state.recognition.lang = getRecognitionLang();
   state.recognition.continuous = false;
   state.recognition.interimResults = false;
   state.recognition.maxAlternatives = 1;
@@ -195,7 +329,7 @@ function setupSpeechRecognition() {
     state.isListening = true;
     voiceButton.classList.add("listening");
     voiceButton.setAttribute("aria-label", "停止语音回答");
-    setFeedback("neutral", "正在听，请直接说中文数字。");
+    setFeedback("neutral", modeSelect.value === "zh-to-en" ? "正在听，请直接说英文数字。" : "正在听，请直接说中文数字。");
   });
 
   state.recognition.addEventListener("end", () => {
@@ -218,6 +352,10 @@ function setupSpeechRecognition() {
 }
 
 function toggleVoiceAnswer() {
+  startVoiceAnswer({ clearInput: true });
+}
+
+function startVoiceAnswer(options = {}) {
   if (!state.recognition) {
     setFeedback("warn", state.voiceUnavailableMessage || "当前浏览器不支持语音识别，可以继续用键盘输入。");
     return;
@@ -229,13 +367,47 @@ function toggleVoiceAnswer() {
   }
 
   clearAutoAdvance();
-  answerInput.value = "";
+  if (options.clearInput) answerInput.value = "";
   window.speechSynthesis?.cancel();
+  state.recognition.lang = getRecognitionLang();
   try {
     state.recognition.start();
   } catch {
     setFeedback("warn", "语音识别还没准备好，请稍等一下再点。");
   }
+}
+
+function stopListening() {
+  if (!state.recognition || !state.isListening) return;
+  state.recognition.stop();
+}
+
+function getRecognitionLang() {
+  return modeSelect.value === "zh-to-en" ? "en-US" : "zh-CN";
+}
+
+function getPromptText() {
+  return modeSelect.value === "zh-to-en" ? toChineseNumber(state.currentNumber) : String(state.currentNumber);
+}
+
+function getReadyMessage() {
+  return modeSelect.value === "zh-to-en"
+    ? "点击播放，听到中文数字后输入或说出英文答案。"
+    : "点击播放，听到英文数字后输入或说出中文答案。";
+}
+
+function getUnrecognizedMessage() {
+  return modeSelect.value === "zh-to-en"
+    ? "还没识别出这个英文数字，可以说英文或输入阿拉伯数字。"
+    : "还没识别出这个中文数字，可以说中文或输入阿拉伯数字。";
+}
+
+function getAnswerSummary() {
+  if (modeSelect.value === "zh-to-en") {
+    return `${state.currentNumber}，${toEnglishNumber(state.currentNumber)}`;
+  }
+
+  return `${state.currentNumber}，${toChineseNumber(state.currentNumber)}`;
 }
 
 function isLocalHost() {
@@ -260,7 +432,7 @@ function getSpeechErrorMessage(error) {
 
 function scheduleAutoAdvance() {
   clearAutoAdvance();
-  state.autoAdvanceTimer = window.setTimeout(chooseNumber, 900);
+  state.autoAdvanceTimer = window.setTimeout(() => chooseNumber({ autoPlay: true }), 900);
 }
 
 function clearAutoAdvance() {
@@ -271,6 +443,9 @@ function clearAutoAdvance() {
 
 function render() {
   digitPreview.textContent = showAnswerToggle.checked ? state.currentNumber : "?";
+  const isReverse = modeSelect.value === "zh-to-en";
+  answerLabel.textContent = isReverse ? "输入或说出英文数字" : "输入或说出中文数字";
+  answerInput.placeholder = isReverse ? "例如：three hundred twenty six" : "例如：三百二十六";
   renderScore();
 }
 
@@ -284,16 +459,19 @@ function setFeedback(type, message) {
   feedback.textContent = message;
 }
 
-playButton.addEventListener("click", speakCurrentNumber);
-nextButton.addEventListener("click", chooseNumber);
+playButton.addEventListener("click", () => speakCurrentNumber({ listenAfter: true }));
+nextButton.addEventListener("click", () => chooseNumber({ autoPlay: true }));
 answerForm.addEventListener("submit", checkAnswer);
 voiceButton.addEventListener("click", toggleVoiceAnswer);
-rangeSelect.addEventListener("change", chooseNumber);
+modeSelect.addEventListener("change", () => chooseNumber({ autoPlay: false }));
+rangeSelect.addEventListener("change", () => chooseNumber({ autoPlay: false }));
 showAnswerToggle.addEventListener("change", render);
 
 window.numberTrainer = {
   normalizeAnswer,
+  parseEnglishInteger,
   toChineseNumber,
+  toEnglishNumber,
 };
 
 setupSpeechRecognition();

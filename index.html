@@ -34,7 +34,7 @@
           </div>
 
           <form id="answer-form" class="answer-form" autocomplete="off">
-            <label for="answer-input">输入或说出中文数字</label>
+            <label id="answer-label" for="answer-input">输入或说出中文数字</label>
             <div class="answer-row">
               <input id="answer-input" name="answer" type="text" inputmode="text" placeholder="例如：三百二十六">
               <button class="voice-button" id="voice-button" type="button" aria-label="语音回答">
@@ -48,6 +48,14 @@
         </div>
 
         <aside class="settings" aria-label="训练设置">
+          <div class="setting">
+            <label for="mode-select">训练模式</label>
+            <select id="mode-select">
+              <option value="en-to-zh" selected>听英文，答中文</option>
+              <option value="zh-to-en">听中文，答英文</option>
+            </select>
+          </div>
+
           <div class="setting">
             <label for="range-select">数字范围</label>
             <select id="range-select">
@@ -73,6 +81,6 @@
       </section>
     </main>
 
-    <script src="./app.js?v=5"></script>
+    <script src="./app.js?v=6"></script>
   </body>
 </html>
