@@ -9,6 +9,7 @@ const state = {
   voiceUnavailableMessage: "",
   audioContext: null,
   listenTimer: null,
+  recognitionSupported: false,
 };
 
 const digitPreview = document.querySelector("#digit-preview");
@@ -342,32 +343,40 @@ function setupSpeechRecognition() {
     return;
   }
 
-  state.recognition = new Recognition();
-  state.recognition.lang = getRecognitionLang();
-  state.recognition.continuous = false;
-  state.recognition.interimResults = false;
-  state.recognition.maxAlternatives = 1;
+  state.recognitionSupported = true;
+}
 
-  state.recognition.addEventListener("start", () => {
+function createRecognition() {
+  const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const recognition = new Recognition();
+  recognition.lang = getRecognitionLang();
+  recognition.continuous = false;
+  recognition.interimResults = true;
+  recognition.maxAlternatives = 5;
+
+  recognition.addEventListener("start", () => {
     state.isListening = true;
     voiceButton.classList.add("listening");
     voiceButton.setAttribute("aria-label", "停止语音回答");
-    setFeedback("neutral", expectsEnglishAnswer() ? "正在听，请直接说英文数字。" : "正在听，请直接说中文数字。");
+    setFeedback("neutral", "滴声后开始回答。");
+    playReadyBeep();
   });
 
-  state.recognition.addEventListener("end", () => {
+  recognition.addEventListener("end", () => {
     state.isListening = false;
     voiceButton.classList.remove("listening");
     voiceButton.setAttribute("aria-label", "语音回答");
   });
 
-  state.recognition.addEventListener("result", (event) => {
-    const transcript = event.results[0][0].transcript;
+  recognition.addEventListener("result", (event) => {
+    const transcript = getBestTranscript(event);
     const numericAnswer = normalizeSpeechAnswer(transcript);
+
+    if (!event.results[event.results.length - 1].isFinal && numericAnswer === null) return;
 
     if (numericAnswer === null) {
       answerInput.value = "";
-      setFeedback("warn", "没有识别到数字，请听到滴声后再说一次。");
+      setFeedback("warn", `没有识别到数字：${transcript || "未听清"}。请听到滴声后再说一次。`);
       window.setTimeout(() => startVoiceAnswer({ clearInput: true }), 520);
       return;
     }
@@ -377,10 +386,12 @@ function setupSpeechRecognition() {
     checkCurrentAnswer();
   });
 
-  state.recognition.addEventListener("error", (event) => {
+  recognition.addEventListener("error", (event) => {
     const message = getSpeechErrorMessage(event.error);
     setFeedback("warn", message);
   });
+
+  return recognition;
 }
 
 function toggleVoiceAnswer() {
@@ -388,7 +399,7 @@ function toggleVoiceAnswer() {
 }
 
 function startVoiceAnswer(options = {}) {
-  if (!state.recognition) {
+  if (!state.recognitionSupported) {
     setFeedback("warn", state.voiceUnavailableMessage || "当前浏览器不支持语音识别，可以继续用键盘输入。");
     return;
   }
@@ -402,22 +413,32 @@ function startVoiceAnswer(options = {}) {
   clearListenTimer();
   if (options.clearInput) answerInput.value = "";
   window.speechSynthesis?.cancel();
-  state.recognition.lang = getRecognitionLang();
-  setFeedback("neutral", "听到滴声后回答。");
-  playReadyBeep();
-  state.listenTimer = window.setTimeout(() => {
-    try {
-      state.recognition.start();
-    } catch {
-      setFeedback("warn", "语音识别还没准备好，请稍等一下再点。");
-    }
-  }, 170);
+  state.recognition = createRecognition();
+  setFeedback("neutral", "正在打开麦克风。");
+  try {
+    state.recognition.start();
+  } catch {
+    setFeedback("warn", "语音识别还没准备好，请稍等一下再点。");
+  }
 }
 
 function stopListening() {
   clearListenTimer();
   if (!state.recognition || !state.isListening) return;
   state.recognition.stop();
+}
+
+function getBestTranscript(event) {
+  const transcripts = [];
+
+  for (let resultIndex = event.resultIndex; resultIndex < event.results.length; resultIndex += 1) {
+    const result = event.results[resultIndex];
+    for (let altIndex = 0; altIndex < result.length; altIndex += 1) {
+      transcripts.push(result[altIndex].transcript.trim());
+    }
+  }
+
+  return transcripts.find((transcript) => normalizeSpeechAnswer(transcript) !== null) || transcripts[0] || "";
 }
 
 function clearListenTimer() {
@@ -562,6 +583,7 @@ showAnswerToggle.addEventListener("change", render);
 window.numberTrainer = {
   normalizeAnswer,
   normalizeSpeechAnswer,
+  getBestTranscript,
   parseEnglishInteger,
   toChineseNumber,
   toEnglishNumber,
